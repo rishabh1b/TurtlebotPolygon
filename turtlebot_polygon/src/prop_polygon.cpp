@@ -1,0 +1,203 @@
+#include "ros/ros.h"
+#include "geometry_msgs/Twist.h"
+#include<cmath>
+#include <tf/transform_listener.h>
+#include <queue>
+
+#define POS_TOL 0.05
+#define ANG_TOL 0.05
+
+int main(int argc, char* argv[])
+{
+   ros::init(argc, argv, "proppolygon");
+   ros::NodeHandle n;
+   ros::Publisher pub = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 5);
+   tf::TransformListener listener;
+   ros::Rate loop_rate(15);
+
+   int option, num_sides;
+   float length;
+
+   //TODO: Add some flags to ensure that both arguments are obtained from the command line
+
+   while ((option = getopt(argc, argv, "n:d:")) != -1)
+   {
+      switch(option)
+	  {
+	    case 'n':
+	       // cout<< "The number of sides are :" << atof(optarg)<<endl;
+	       num_sides = atoi(optarg);
+	       break;
+	    case 'd':
+	       // cout<< "The length of each side is :" << atof(optarg)<<endl;
+	       length = atof(optarg);
+	       break;
+	    default:
+	      std::cout<< "Didn't get the expected inputs"<<std::endl; 
+
+	  }
+    }
+
+   ROS_INFO("Drawing a regular polygon with sides %d and length %f...", num_sides, length);
+
+   float poly_rot_angle_curr = M_PI * 360/ (180 * num_sides);
+
+   std::queue<double*> goal_points;
+   double goal_point_1[3] = {0, 0, M_PI/2};  
+   double goal_point_2[3] = {0, length, M_PI/2};
+   goal_points.push(goal_point_1);
+   goal_points.push(goal_point_2);
+
+   int number_of_intervals = 2 * num_sides;
+
+   //create the required goal arrays in the turtlebot's local frame
+   double* next_goal_point;
+   double old_goal_point[3] = {goal_point_2[0], goal_point_2[1], goal_point_2[2]};
+   for (int i = 2; i < number_of_intervals; i++)
+   {
+       next_goal_point = new double[3];
+       if (i % 2 == 0)
+       { 
+           next_goal_point[0] = 0;
+           next_goal_point[1] = 0;
+           next_goal_point[2] = old_goal_point[2] + poly_rot_angle_curr;
+	}
+      else
+       {
+           next_goal_point[0] = length;
+           next_goal_point[1] = 0;
+           next_goal_point[2] = old_goal_point[2];
+        }
+      goal_points.push(next_goal_point);
+      old_goal_point[0] = next_goal_point[0];
+      old_goal_point[1] = next_goal_point[1];
+      old_goal_point[2] = next_goal_point[2];
+   }
+
+   geometry_msgs::Twist msg;
+
+   double* control_input = new double[2];
+   double* curr_state = new double[3];
+   double del_x, del_y, rho, alpha, beta;
+   double max_velocity = 0.5;
+   double kp = 1, kw = 1;
+   bool done = true; 
+   tf::StampedTransform transform;
+   tf::Vector3 v, v_glob;
+   
+   double* curr_goal;
+   int count = 1, edge_count = 1;
+   while((ros::ok()))
+   {
+      //Transformation from Robot's Frame to global odom Frame
+      listener.waitForTransform("/odom","/base_footprint",ros::Time(0), ros::Duration(0.01));
+      try{
+        listener.lookupTransform("/odom", "/base_footprint",  
+	                  ros::Time(0), transform);
+       }
+      catch (tf::TransformException ex){
+	   ROS_ERROR("%s",ex.what());
+	   ros::Duration(1.0).sleep();
+       }
+
+      if (done)
+       {   
+           if (goal_points.size() > 0)
+           {
+              if (count % 2 == 0)
+              {
+ 		ROS_INFO("Drawing edge %d \n", edge_count);
+                edge_count++;
+              }
+
+              curr_goal = goal_points.front();
+              if (count > 2)
+              {
+                 //Transform the goal point(x,y) from Turtlebot's frame to global frame
+                 v.setValue(curr_goal[0], curr_goal[1], 1);
+                 v_glob = transform * v;         
+                 curr_goal[0] = v_glob.getX();
+                 curr_goal[1] = v_glob.getY();
+              }
+
+              if (curr_goal[2] > 2 * M_PI) 
+                   curr_goal[2] = curr_goal[2] - 2 * M_PI;
+
+              goal_points.pop();
+              done = false;
+              count++;
+            }
+           else
+               break;   //Polygon Complete
+       }
+
+      curr_state[0] = transform.getOrigin().x();
+      curr_state[1] = transform.getOrigin().y();
+      curr_state[2] = tf::getYaw(transform.getRotation());
+
+      //Make the angles between [0, 2pi] instead of [-pi, pi]
+      if (curr_state[2] < 0)
+          curr_state[2] = curr_state[2] + 2 * 3.146;
+
+      del_x = curr_goal[0] - curr_state[0];
+      del_y = curr_goal[1] - curr_state[1];
+      rho = sqrt(pow(del_x, 2) + pow(del_y, 2));
+     
+     //Condition for goal_point Achieved
+     if (rho < POS_TOL && (std::abs(curr_state[2] - curr_goal[2]) < ANG_TOL || (std::abs(6.28 - curr_state[2] - curr_goal[2]) < ANG_TOL && num_sides == 4)))
+         done = true;
+     else
+      {
+         //Proportional Controller
+         control_input[0] = kp * rho;
+         
+	 //For the case of square adjustment to deal with fluctuation between zero and 2 * M_PI
+         if (count == 9 && num_sides == 4)
+         {  
+             if (curr_state[2] > 5)
+                  curr_goal[2] = 6.28;
+             else
+                  curr_goal[2] = 0.0;
+
+             control_input[1] = kw * (curr_goal[2] - curr_state[2]);
+         } 
+
+         else if (count == 8 && num_sides == 4)
+        { 
+           control_input[1] = kw * std::abs(curr_goal[2] - curr_state[2]);
+         }
+         else
+            control_input[1] = kw * (curr_goal[2] - curr_state[2]);
+
+         //Limit the velocities
+         if (std::abs(control_input[0]) > max_velocity)
+         {
+            if (control_input[0] < 0)
+                control_input[0] = -max_velocity;
+            else
+                control_input[0] = max_velocity;
+         }
+         if (std::abs(control_input[1]) > max_velocity)
+          {
+	     if (control_input[1] < 0)
+	       control_input[1] = -max_velocity;
+	     else
+	       control_input[1] = max_velocity;
+          }
+          
+          //Publish the message
+          msg.linear.x = control_input[0];
+      	  msg.angular.z = control_input[1];
+          pub.publish(msg);
+       }
+      loop_rate.sleep();
+    } 
+
+    delete[] curr_state;
+    delete[] control_input;
+
+}
+
+
+
+
