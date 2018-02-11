@@ -9,12 +9,23 @@ git clone https://github.com/rishabh1b/TurtlebotPolygon
 catkin_init_workspace
 cd ~/catkin_ws
 catkin_make
+source devel/setup.bash
 ```
-An example for drawing hexagon-
+An example for drawing Square-
 
-Terminal 1 - roslaunch turtlebot_polygon project_3_world.launch
+Terminal 1 - 
+```
+roslaunch turtlebot_polygon spawn_empty.launch
+```
+Terminal 2 -
+``` rosrun turtlebot_polygon proppolygon -n 4 -d 1
+```
+or this can be run directly with the help of a launch file - 
+```
+roslaunch turtlebot_polygon basic_walking.launch num_sides:=4 length:=1
+```
 
-Terminal 2 - rosrun turtlebot_polygon proppolygon -n 4 -d 1
+The software will work with the Indigo and Kinetic with native gazebo simulators(Gazebo-2 for Indigo and Gazebo-7 for Kinetic). To use Gazebo-7 with Indigo, see instructions below-
 
 ## Instructions for using it with Gazebo-7 and Indigo
 Make sure you have a simulation packages for turtlebot installed from source. The Instructions to install this are as follows:
@@ -42,22 +53,18 @@ $ git checkout kinetic
 ```
 $ cd ~/turtle_ws
 $ catkin_make
-$ source devel/setup.bash
 ```
-Now, to run the control code in this package, we will overlay the ```turtle_ws``` onto the ```catkin_ws```
+Now, to run the control code of the current software, we will _overlay_ the ```turtle_ws``` onto the ```catkin_ws```
 In a new terminal:
 ```
 cd ~/catkin_ws
+source ~/turtle_ws/devel/setup.bash
+catkin_make --force-cmake
 source devel/setup.bash
-cd ~/turtle_ws
-source devel/setup.bash
-roslaunch turtlebot_polygon project_3_world.launch
 ```
-The last step should launch gazebo empty world with a TurtleBot.
+Use ```--force-cmake``` option in ```catkin_make``` to make sure that the ```turtle_ws``` is overlayed properly
 
-In another terminal run the control code - 
+Finally, to test the implementaation, run the launch file - 
 ```
-cd ~/catkin_ws
-source devel/setup.bash
-rosrun turtlebot_polygon proppolygon -n 4 -d 1
+roslaunch turtlebot_polygon basic_walking.launch
 ```
