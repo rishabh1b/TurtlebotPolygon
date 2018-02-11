@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+
+<launch>  
+<arg name="num_sides" default="4"/>
+<arg name="length" default="1"/>
+
+<include file="$(find turtlebot_polygon)/launch/spawn_empty.launch"> </include>
+
+<node pkg="turtlebot_polygon" name="execute_polygon" type="proppolygon" args="-n $(arg num_sides) -d $(arg length)"/>
+</launch>  	
