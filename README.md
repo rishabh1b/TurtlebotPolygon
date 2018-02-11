@@ -18,7 +18,8 @@ Terminal 1 -
 roslaunch turtlebot_polygon spawn_empty.launch
 ```
 Terminal 2 -
-``` rosrun turtlebot_polygon proppolygon -n 4 -d 1
+``` 
+rosrun turtlebot_polygon proppolygon -n 4 -d 1
 ```
 or this can be run directly with the help of a launch file - 
 ```
